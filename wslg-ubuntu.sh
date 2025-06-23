@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # WSL Xfce Desktop Installer
-# Fixed plocate initialization hang issue
+# 优化plocate配置避免卡死问题
 # GitHub: https://github.com/lsl330/wslg-ubuntu
 
 set -e
@@ -17,16 +17,14 @@ EOF
 echo "更新系统包列表..."
 sudo apt-get update
 
-# 修复plocate初始化卡住问题
-echo "修复plocate数据库初始化问题..."
-if [ -f /etc/updatedb.conf ]; then
-    sudo sed -i 's|PRUNEPATHS=""|PRUNEPATHS="/mnt"|g' /etc/updatedb.conf
-    sudo sed -i 's|PRUNEFS=""|PRUNEFS="ntfs"|g' /etc/updatedb.conf
-else
-    echo 'PRUNE_BIND_MOUNTS="yes"' | sudo tee /etc/updatedb.conf
-    echo 'PRUNEPATHS="/tmp /var/spool /mnt"' | sudo tee -a /etc/updatedb.conf
-    echo 'PRUNEFS="NFS nfs nfs4 rpc_pipefs afs binfmt_misc proc smbfs autofs iso9660 ncpfs coda devpts ftpfs devfs ntfs"' | sudo tee -a /etc/updatedb.conf
-fi
+# 预先配置plocate避免卡死 (优化版)
+echo "配置plocate跳过/mnt目录索引..."
+sudo tee /etc/updatedb.conf > /dev/null <<'EOF'
+PRUNE_BIND_MOUNTS="yes"
+PRUNENAMES=".git .bzr .hg .svn"
+PRUNEPATHS="/tmp /var/spool /var/lock /var/cache /var/lib/lxcfs /var/lib/docker /mnt"
+PRUNEFS="NFS nfs nfs4 rpc_pipefs afs binfmt_misc proc smbfs autofs iso9660 ncpfs coda devpts ftpfs devfs mfs shfs sysfs cifs lustre_lite tmpfs usbfs udf fuse.glusterfs fuse.sshfs curlftpfs ecryptfs fusesmb devtmpfs"
+EOF
 
 # 安装Xfce桌面环境
 echo "安装Xfce桌面环境 (约1GB，请耐心等待)..."
