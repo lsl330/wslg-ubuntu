@@ -10,6 +10,12 @@
 curl -o wslg-ubuntu.sh https://raw.githubusercontent.com/lsl330/wslg-ubuntu/refs/heads/main/wslg-ubuntu.sh && chmod +x wslg-ubuntu.sh && ./wslg-ubuntu.sh
 ```
 
+### 部署命令（中文版）
+
+```bash
+curl -o wslg-ubuntu.sh https://raw.githubusercontent.com/lsl330/wslg-ubuntu/refs/heads/main/wslg-ubuntu-cn.sh && chmod +x wslg-ubuntu.sh && ./wslg-ubuntu.sh
+```
+
 ## 🌟 功能特点
 
 ### 完全无人值守
