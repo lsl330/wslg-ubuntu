@@ -7,8 +7,7 @@
 ### 部署命令
 
 ```bash
-curl -o wslg-ubuntu.sh https://raw.githubusercontent.com/lsl330/wslg-ubuntu/refs/heads/main/wslg-ubuntu.sh
-chmod +x wslg-ubuntu.sh && ./wslg-ubuntu.sh
+curl -o wslg-ubuntu.sh https://raw.githubusercontent.com/lsl330/wslg-ubuntu/refs/heads/main/wslg-ubuntu.sh && chmod +x wslg-ubuntu.sh && ./wslg-ubuntu.sh
 ```
 
 ## 🌟 功能特点
