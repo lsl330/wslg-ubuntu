@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # WSL Xfce Desktop Installer
-# 优化plocate配置避免卡死问题
+# 完全无人值守安装，解决plocate卡死问题
 # GitHub: https://github.com/lsl330/wslg-ubuntu
 
 set -e
@@ -17,18 +17,31 @@ EOF
 echo "更新系统包列表..."
 sudo apt-get update
 
-# 预先配置plocate避免卡死 (优化版)
+# 完全避免plocate交互式初始化
+echo "禁用plocate自动初始化..."
+sudo mkdir -p /etc/apt/apt.conf.d/
+echo 'DPkg::Post-Invoke {"if [ -x /usr/bin/plocate ]; then touch /var/lib/plocate/plocate.db; fi";};' | sudo tee /etc/apt/apt.conf.d/99disable-plocate-init >/dev/null
+
+# 配置plocate跳过/mnt目录索引
 echo "配置plocate跳过/mnt目录索引..."
-sudo tee /etc/updatedb.conf > /dev/null <<'EOF'
+sudo tee /etc/updatedb.conf >/dev/null <<'EOF'
 PRUNE_BIND_MOUNTS="yes"
 PRUNENAMES=".git .bzr .hg .svn"
 PRUNEPATHS="/tmp /var/spool /var/lock /var/cache /var/lib/lxcfs /var/lib/docker /mnt"
 PRUNEFS="NFS nfs nfs4 rpc_pipefs afs binfmt_misc proc smbfs autofs iso9660 ncpfs coda devpts ftpfs devfs mfs shfs sysfs cifs lustre_lite tmpfs usbfs udf fuse.glusterfs fuse.sshfs curlftpfs ecryptfs fusesmb devtmpfs"
 EOF
 
-# 安装Xfce桌面环境
+# 安装Xfce桌面环境（同时安装plocate但避免初始化）
 echo "安装Xfce桌面环境 (约1GB，请耐心等待)..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xubuntu-desktop
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xubuntu-desktop plocate
+
+# 手动安全初始化plocate
+echo "安全初始化plocate数据库..."
+sudo mkdir -p /var/lib/plocate
+sudo touch /var/lib/plocate/plocate.db
+sudo chown root:plocate /var/lib/plocate/plocate.db
+sudo chmod 640 /var/lib/plocate/plocate.db
+sudo updatedb
 
 # 修复WSLg权限问题
 echo "修复WSLg目录权限..."
@@ -76,7 +89,7 @@ EOF
 
 # 创建启动脚本
 echo "创建启动脚本..."
-sudo tee /usr/local/bin/xubuntu >/dev/null <<EOF
+sudo tee /usr/local/bin/xubuntu >/dev/null <<'EOF'
 #!/bin/bash
 
 # 显示关机提示
