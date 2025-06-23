@@ -58,7 +58,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     xfce4-screenshooter \
     xfce4-taskmanager \
     xfce4-terminal \
-    xfce4-whiskermenu-plugin
+    xfce4-whiskermenu-plugin \
+    pm-utils  # 安装pm-utils以提供pm-is-supported命令
 
 # 5. 禁用冲突的WSLg服务
 echo "禁用冲突的WSLg服务..."
@@ -99,16 +100,22 @@ cat > ~/.config/monitors.xml <<EOF
 </monitors>
 EOF
 
-# 创建启动脚本
-echo "创建启动脚本..."
+# 创建启动脚本（修复版）
+echo "创建修复版启动脚本..."
 sudo tee /usr/local/bin/xubuntu >/dev/null <<'EOF'
 #!/bin/bash
 
 # 停止冲突的服务
 sudo systemctl stop weston-launch 2>/dev/null || true
 sudo systemctl stop xwayland 2>/dev/null || true
-killall weston 2>/dev/null || true
-killall Xwayland 2>/dev/null || true
+
+# 强制杀死可能残留的进程
+sudo pkill -9 weston || true
+sudo pkill -9 Xwayland || true
+sudo pkill -9 xfwm4 || true
+sudo pkill -9 xfdesktop || true
+sudo pkill -9 xfce4-panel || true
+sudo pkill -9 xfce4-session || true
 
 # 显示关机提示
 echo -e "\n\033[1;33m⚠️ 请勿直接关闭窗口! 请使用以下方式关机:\033[0m"
@@ -117,7 +124,9 @@ echo -e "2. 终端命令: sudo poweroff\033[0m\n"
 
 # 启动DBUS服务
 echo "启动DBUS服务..."
-sudo service dbus start
+sudo mkdir -p /var/run/dbus
+sudo dbus-daemon --system --fork
+export $(dbus-launch)
 
 # 启动显示管理器
 echo "启动LightDM服务..."
@@ -128,15 +137,35 @@ export DISPLAY=:0
 export XDG_SESSION_TYPE=x11
 export XDG_CURRENT_DESKTOP=XFCE
 
-# 启动Xfce桌面环境
-echo "启动Xfce桌面环境 (首次启动需30-60秒)..."
-startxfce4
+# 等待X服务器启动（WSLg已经启动了Xwayland，但我们确保使用:0）
+sleep 1
 
-# 如果上述命令失败，尝试备用方法
-if [ $? -ne 0 ]; then
-    echo "尝试备用启动方法..."
-    xfce4-session
+# 启动Xfce组件（窗口管理器、桌面、面板）
+echo "替换Weston窗口管理器并启动Xfce..."
+xfwm4 --replace --daemon &
+sleep 1
+xfdesktop --daemon &
+sleep 1
+xfce4-panel &
+sleep 1
+
+# 启动其他Xfce组件（会话管理器和设置）
+xfce4-session &
+xfce4-settings &
+
+# 等待面板启动
+sleep 5
+
+# 如果面板没有启动，尝试重启
+if ! pgrep -x "xfce4-panel" > /dev/null; then
+    echo "检测到面板未启动，尝试重启面板..."
+    xfce4-panel &
 fi
+
+# 保持脚本运行（防止关闭窗口导致桌面退出）
+echo "桌面已启动，按Ctrl+C可退出此脚本（但会关闭桌面）。"
+echo "建议最小化此窗口而不是关闭。"
+wait
 EOF
 
 sudo chmod +x /usr/local/bin/xubuntu
