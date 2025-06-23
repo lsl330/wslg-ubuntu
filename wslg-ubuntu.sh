@@ -17,6 +17,10 @@ echo "更新系统包列表..."
 sudo apt-get update
 sudo apt-get upgrade -y
 
+# 安装必要工具
+echo "安装必要工具..."
+sudo apt-get install -y wget
+
 # 安装Xfce桌面环境和必要组件
 echo "安装Xfce桌面环境和必要组件..."
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -35,9 +39,9 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 echo "配置区域设置..."
 echo "LANG=en_US.UTF-8" | sudo tee -a /etc/default/locale
 
-# 创建并配置wslg-fix.service
-echo "创建并配置wslg-fix.service..."
-sudo systemctl edit --full --force wslg-fix.service <<'EOF'
+# 下载并配置wslg-fix.service
+echo "下载并配置wslg-fix.service..."
+sudo tee /etc/systemd/system/wslg-fix.service >/dev/null <<'EOF'
 [Unit]
 Description=Fix WSLg issues
 
@@ -47,7 +51,7 @@ ExecStart=-/usr/bin/umount /tmp/.X11-unix
 ExecStart=/usr/bin/rm -rf /tmp/.X11-unix
 ExecStart=/usr/bin/mkdir /tmp/.X11-unix
 ExecStart=/usr/bin/chmod 1777 /tmp/.X11-unix
-ExecStart=/usr/bin/ln -s /mnt/wslg/.X11-unix/X0 /tmp/.X11-unix/X0
+ExecStart=/usr/bin/ln -sf /mnt/wslg/.X11-unix/X0 /tmp/.X11-unix/X0
 ExecStart=/usr/bin/chmod 0777 /mnt/wslg/runtime-dir
 ExecStart=/usr/bin/chmod 0666 /mnt/wslg/runtime-dir/wayland-0.lock
 
@@ -55,11 +59,13 @@ ExecStart=/usr/bin/chmod 0666 /mnt/wslg/runtime-dir/wayland-0.lock
 WantedBy=multi-user.target
 EOF
 
+sudo chmod 644 /etc/systemd/system/wslg-fix.service
+sudo systemctl daemon-reload
 sudo systemctl enable wslg-fix.service
 
 # 修改user-runtime-dir@.service
 echo "修改user-runtime-dir@.service..."
-sudo systemctl edit user-runtime-dir@.service <<'EOF'
+sudo tee /etc/systemd/system/user-runtime-dir@.service.d/override.conf >/dev/null <<'EOF'
 [Service]
 ExecStartPost=-/usr/bin/rm -f /run/user/%i/wayland-0 /run/user/%i/wayland-0.lock
 EOF
@@ -195,6 +201,11 @@ Type=Application
 Categories=Utility;
 EOF
 chmod +x ~/Desktop/Xfce.desktop
+
+# 修复权限问题
+echo "修复权限问题..."
+sudo chmod 1777 /tmp
+sudo chmod a+w /mnt/wslg/runtime-dir/wayland-0.lock
 
 # 完成提示
 echo -e "\n\033[1;32m✅ 安装完成！请按以下步骤操作："
