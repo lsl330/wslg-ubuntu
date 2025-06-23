@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# WSL2 Xfce Desktop with WSLg (XWayland) - 完美实现原生桌面环境
+# WSL2 Xfce Desktop with WSLg (XWayland) - 修复版
 # GitHub: https://github.com/lsl330/wslg-ubuntu
 
 set -e
@@ -16,10 +16,6 @@ EOF
 echo "更新系统包列表..."
 sudo apt-get update
 sudo apt-get upgrade -y
-
-# 安装必要工具
-echo "安装必要工具..."
-sudo apt-get install -y wget
 
 # 安装Xfce桌面环境和必要组件
 echo "安装Xfce桌面环境和必要组件..."
@@ -39,8 +35,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 echo "配置区域设置..."
 echo "LANG=en_US.UTF-8" | sudo tee -a /etc/default/locale
 
-# 下载并配置wslg-fix.service
-echo "下载并配置wslg-fix.service..."
+# 创建并配置wslg-fix.service
+echo "创建并配置wslg-fix.service..."
 sudo tee /etc/systemd/system/wslg-fix.service >/dev/null <<'EOF'
 [Unit]
 Description=Fix WSLg issues
@@ -63,8 +59,9 @@ sudo chmod 644 /etc/systemd/system/wslg-fix.service
 sudo systemctl daemon-reload
 sudo systemctl enable wslg-fix.service
 
-# 修改user-runtime-dir@.service
+# 修改user-runtime-dir@.service - 修复目录不存在问题
 echo "修改user-runtime-dir@.service..."
+sudo mkdir -p /etc/systemd/system/user-runtime-dir@.service.d
 sudo tee /etc/systemd/system/user-runtime-dir@.service.d/override.conf >/dev/null <<'EOF'
 [Service]
 ExecStartPost=-/usr/bin/rm -f /run/user/%i/wayland-0 /run/user/%i/wayland-0.lock
