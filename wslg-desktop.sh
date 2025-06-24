@@ -30,7 +30,6 @@ msg() {
             "set_display_target") echo "配置显示目标..." ;;
             "init_plocate") echo "安全初始化plocate数据库..." ;;
             "fix_permissions") echo "修复WSLg目录权限..." ;;
-            "install_xrandr") echo "安装xrandr工具..." ;;
             "create_launcher") echo "创建启动脚本..." ;;
             "create_desktop_file") echo "创建桌面快捷方式..." ;;
             "init_resolution") echo "初始化分辨率配置..." ;;
@@ -65,7 +64,6 @@ msg() {
             "set_display_target") echo "Setting display target..." ;;
             "init_plocate") echo "Initializing plocate database safely..." ;;
             "fix_permissions") echo "Fixing WSLg permissions..." ;;
-            "install_xrandr") echo "Installing xrandr tool..." ;;
             "create_launcher") echo "Creating launcher script..." ;;
             "create_desktop_file") echo "Creating desktop shortcut..." ;;
             "init_resolution") echo "Initializing resolution configuration..." ;;
@@ -166,25 +164,19 @@ init_resolution() {
     RES_WIDTH=1920
     RES_HEIGHT=1080
     
-    # 尝试使用xrandr获取当前分辨率
-    if command -v xrandr &> /dev/null; then
-        # 启动一个临时的Xwayland会话来获取分辨率
-        Xvfb :99 -screen 0 1024x768x24 &
-        XPID=$!
-        sleep 1
-        
-        DISPLAY=:99 xrandr > /tmp/xrandr.output 2>&1
-        RESOLUTION=$(grep -m1 '*' /tmp/xrandr.output | awk '{print $1}')
-        kill $XPID
-        wait $XPID 2>/dev/null
-        
-        if [[ "$RESOLUTION" =~ ([0-9]+)x([0-9]+) ]]; then
-            RES_WIDTH=${BASH_REMATCH[1]}
-            RES_HEIGHT=${BASH_REMATCH[2]}
-            echo "检测到分辨率: ${RES_WIDTH}x${RES_HEIGHT}"
-        else
-            msg resolution_fallback
-        fi
+    # 使用wmic获取当前分辨率，awk输出格式为 "宽度x高度"
+    RESOLUTION=$(powershell.exe -Command "wmic path Win32_VideoController get CurrentHorizontalResolution,CurrentVerticalResolution" | awk 'NR==2 {print $1 "x" $2}')
+
+    # 使用 cut 命令分割字符串
+    # -d 'x' 指定分隔符为 'x'
+    # -f 1 获取第一个字段 (宽度)
+    # -f 2 获取第二个字段 (高度)
+    RES_WIDTH=$(echo "$RESOLUTION" | cut -dx -f 1)
+    RES_HEIGHT=$(echo "$RESOLUTION" | cut -dx -f 2)
+
+    # 检查是否成功获取了数字
+    if [[ "$RES_WIDTH" =~ ^[0-9]+$ ]] && [[ "$RES_HEIGHT" =~ ^[0-9]+$ ]]; then
+        echo "通过WMIC检测到分辨率: ${RES_WIDTH}x${RES_HEIGHT}"
     else
         msg resolution_fallback
     fi
@@ -221,6 +213,9 @@ EOF
     sudo mkdir -p /var/lib/gdm3/.config
     sudo cp ~/.config/monitors.xml /var/lib/gdm3/.config/ || true
     sudo chown -R gdm:gdm /var/lib/gdm3/.config/ || true
+    
+    # 在Xwayland脚本中硬编码分辨率
+    sudo sed -i "s/-geometry [0-9]\+x[0-9]\+/-geometry ${RES_WIDTH}x${RES_HEIGHT}/" /usr/bin/Xorg.Xwayland
 }
 
 # 主安装程序
@@ -228,6 +223,9 @@ main() {
     # 用户选择
     select_language
     select_desktop
+    
+    # 保存桌面环境配置
+    echo "DESKTOP_ENV=$DESKTOP_ENV" | sudo tee /etc/wslg-desktop-env >/dev/null
     
     # 启用systemd
     msg enable_systemd
@@ -241,11 +239,7 @@ EOF
     sudo apt-get update
     sudo apt-get upgrade -y
 
-    # 安装xrandr（分辨率检测需要）
-    msg install_xrandr
-    sudo apt-get install -y x11-xserver-utils
-
-    # 初始化分辨率配置（需要先安装xrandr）
+    # 初始化分辨率配置
     init_resolution
 
     # 安装语言支持
@@ -402,12 +396,29 @@ EOF
     sudo tee /usr/local/bin/wslg-desktop >/dev/null <<'EOF'
 #!/bin/bash
 
+# 加载桌面环境配置
+if [ -f /etc/wslg-desktop-env ]; then
+    source /etc/wslg-desktop-env
+else
+    DESKTOP_ENV="gnome" # 默认值
+fi
+
+# 确保必要的目录存在
+mkdir -p "$HOME/runtime-dir"
+ln -sf /mnt/wslg/runtime-dir/wayland-0 $HOME/runtime-dir/ || true
+ln -sf /mnt/wslg/runtime-dir/wayland-0.lock $HOME/runtime-dir/ || true
+
+# 设置环境变量
+export XDG_RUNTIME_DIR="$HOME/runtime-dir"
+export WAYLAND_DISPLAY="wayland-0"
+export DISPLAY=":0"
+
 # 解决DBUS连接问题
 if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
     if [ -e "$XDG_RUNTIME_DIR/bus" ]; then
         export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
     else
-        # 手动启动用户会话总线
+        # 创建DBUS会话
         dbus-run-session -- sh -c 'echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" > ~/.dbus.env'
         source ~/.dbus.env
     fi
@@ -431,23 +442,23 @@ fi
 # 启动图形目标
 echo "Starting graphical session..."
 sudo systemctl start graphical.target
-
-# 等待桌面启动
-echo "Waiting for desktop to start (first launch may take 30-60 seconds)..."
-sleep 15
+sleep 2 # 等待系统服务启动
 
 # 启动用户桌面会话
-if [ "$DESKTOP_ENV" = "gnome" ]; then
-    # 启动GNOME
-    export XDG_CURRENT_DESKTOP=ubuntu:GNOME
-    dbus-launch gnome-session
-else
-    # 启动Xfce
-    dbus-launch startxfce4
-fi
-
-# 保持脚本运行
-wait
+echo "Starting desktop environment: $DESKTOP_ENV"
+case "$DESKTOP_ENV" in
+    "gnome")
+        export XDG_CURRENT_DESKTOP=ubuntu:GNOME
+        exec gnome-session
+        ;;
+    "xfce")
+        exec startxfce4
+        ;;
+    *)
+        echo "Unknown desktop environment: $DESKTOP_ENV"
+        exit 1
+        ;;
+esac
 EOF
     sudo chmod +x /usr/local/bin/wslg-desktop
 
