@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # WSL Multi-Desktop Installer with Multi-Language Support
-# GitHub: https://github.com/lsl330/wslg-desktop
+# GitHub: https://github.com/lsl330/wslg-ubuntu
 
 set -e
 
@@ -35,6 +35,15 @@ EOF
 # 更新系统
 echo "Updating package lists..."
 sudo apt-get update
+
+# 安装必要依赖（包括xrandr）
+echo "Installing essential dependencies..."
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    x11-xserver-utils \
+    mesa-utils \
+    xdg-utils \
+    dbus-user-session \
+    policykit-1
 
 # 如果不是Deepin桌面，则安装所选语言
 if [ "$desktop_choice" != "3" ]; then
@@ -104,14 +113,24 @@ case $desktop_choice in
     3)
         echo "Installing Deepin desktop environment..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            deepin-desktop-environment-base \
-            deepin-desktop-environment-cli \
             deepin-desktop-environment-core \
             deepin-default-settings \
             deepin-terminal \
             deepin-image-viewer \
-            deepin-screen-recorder-plugin \
-            deepin-screen-recorder
+            deepin-screenshot \
+            deepin-graphics-driver-manager \
+            deepin-polkit-agent
+        
+        # 额外修复Deepin桌面所需的依赖
+        sudo apt-get install -y \
+            x11-xkb-utils \
+            xserver-xorg-input-all \
+            libqt5gui5 \
+            libqt5dbus5 \
+            libqt5x11extras5 \
+            libxcb-util0 \
+            libxcb-util1
+        
         DESKTOP_NAME="Deepin"
         DESKTOP_LAUNCH="startdde"
         ;;
@@ -205,7 +224,6 @@ done
 if [ ! -d $HOME/runtime-dir ]
 then
  mkdir $HOME/runtime-dir
- ln -s /mnt.wslg/.X11-unix/X0 /tmp/.X11-unix/X0
  ln -s /mnt/wslg/.X11-unix/X0 /tmp/.X11-unix/X0
  ln -s /mnt/wslg/runtime-dir/wayland-0 /mnt/wslg/runtime-dir/wayland-0.lock $HOME/runtime-dir/
 fi
@@ -303,8 +321,8 @@ export XMODIFIERS=@im=fcitx
 EOF
 fi
 
-# 11. 创建统一启动命令（解决重启问题）
-echo "Creating unified desktop launch command with session fix..."
+# 11. 创建统一启动命令（解决Deepin启动问题）
+echo "Creating unified desktop launch command with Deepin fixes..."
 sudo tee /usr/local/bin/wslg-desktop >/dev/null <<EOF
 #!/bin/bash
 
@@ -321,6 +339,34 @@ echo -e "2. Terminal command: sudo poweroff\033[0m\n"
 # 设置环境变量
 export XDG_RUNTIME_DIR=/run/user/\$(id -u)
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\$(id -u)/bus
+
+# Deepin桌面特殊修复
+if [ "$DESKTOP_NAME" = "Deepin" ]; then
+    # 修复背光控制器错误
+    sudo mkdir -p /sys/class/backlight/dummy
+    echo 100 | sudo tee /sys/class/backlight/dummy/brightness >/dev/null 2>&1
+    
+    # 修复显卡模式检测错误
+    export DDE_DISABLE_GPU_CHECK=1
+    
+    # 修复用户ID 0未登录错误
+    sudo loginctl enable-linger \$(id -u)
+    
+    # 修复显示器名称错误
+    export DDE_DISABLE_DISPLAY_NAME_CHECK=1
+    
+    # 修复触摸屏映射错误
+    export DDE_DISABLE_TOUCHSCREEN_MAPPING=1
+    
+    # 修复内置屏幕检测错误
+    export DDE_DISABLE_BUILTIN_SCREEN_CHECK=1
+    
+    # 修复redshift服务错误
+    export DDE_DISABLE_REDSHIFT=1
+    
+    # 确保正确的权限
+    sudo chown -R \$(id -u):\$(id -g) ~/.config
+fi
 
 # 启动桌面环境
 echo "Launching $DESKTOP_NAME desktop..."
@@ -360,22 +406,52 @@ IDList=
 IconIndex=0
 EOF
 
-# 14. 完成提示
+# 14. 创建无需sudo的启动脚本
+echo "Creating user-level launcher..."
+tee ~/start-desktop.sh >/dev/null <<EOF
+#!/bin/bash
+
+# 确保以当前用户运行
+if [ "\$(id -u)" -eq 0 ]; then
+    echo "Error: This script must be run as regular user, not root."
+    exit 1
+fi
+
+# 启动桌面
+/usr/local/bin/wslg-desktop
+EOF
+
+chmod +x ~/start-desktop.sh
+
+# 15. 完成提示
 echo -e "\n\033[1;32m✅ Installation complete! Follow these steps:\033[0m"
 echo -e "1. \033[1;34mRestart WSL: wsl --shutdown (in Windows PowerShell/CMD)\033[0m"
 echo -e "2. \033[1;34mRestart your WSL Ubuntu session\033[0m"
-echo -e "3. \033[1;34mLaunch desktop: wslg-desktop\033[0m"
-echo -e "4. First launch may take 30-60 seconds to initialize"
 
 if [ "$desktop_choice" == "3" ]; then
-    echo -e "\n\033[1;33mDeepin Desktop Note:"
-    echo -e "   - After login, you can set your preferred language in Deepin Control Center"
-    echo -e "   - Go to System Settings → Personalization → Language\033[0m"
+    echo -e "\n\033[1;33mDeepin Desktop Startup Instructions:\033[0m"
+    echo -e "3. \033[1;34mStart desktop: ~/start-desktop.sh\033[0m"
+    echo -e "   - Do NOT use sudo or root user"
+    echo -e "   - First launch may take 1-3 minutes to initialize"
+    echo -e "   - After login, set your language in Deepin Control Center:"
+    echo -e "     System Settings → Personalization → Language"
+    echo -e "\n\033[1;33mKnown Deepin Fixes Applied:\033[0m"
+    echo -e "   - Backlight controller dummy created"
+    echo -e "   - GPU checking disabled"
+    echo -e "   - User linger enabled"
+    echo -e "   - Display name checking disabled"
+    echo -e "   - Touchscreen mapping disabled"
+    echo -e "   - Built-in screen checking disabled"
+    echo -e "   - Redshift service disabled"
+else
+    echo -e "3. \033[1;34mStart desktop: wslg-desktop\033[0m"
+    echo -e "   - First launch may take 30-60 seconds to initialize"
 fi
 
-echo -e "\n\033[1;33mDesktop Launch Options:"
-echo -e "   - Command line: wslg-desktop"
+echo -e "\n\033[1;33mDesktop Launch Options:\033[0m"
+echo -e "   - Command line: ~/start-desktop.sh (Deepin) or wslg-desktop (others)"
 echo -e "   - Windows shortcut: Desktop 'WSLg Desktop' icon"
-echo -e "   - Windows Start Menu: Search for 'WSLg Desktop'\033[0m"
-echo -e "\n\033[1;33mTroubleshooting:"
-echo -e "   If desktop doesn't appear, check logs: journalctl -b -t /usr/lib/gdm3/gdm-x-session -t /usr/bin/Xorg --no-pager\033[0m"
+echo -e "   - Windows Start Menu: Search for 'WSLg Desktop'"
+echo -e "\n\033[1;33mTroubleshooting:\033[0m"
+echo -e "   If desktop doesn't appear, check logs:"
+echo -e "      journalctl -b --user --no-pager -u user@$(id -u).service"
