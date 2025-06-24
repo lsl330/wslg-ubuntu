@@ -33,6 +33,7 @@ msg() {
             "install_xrandr") echo "安装xrandr工具..." ;;
             "create_launcher") echo "创建启动脚本..." ;;
             "create_desktop_file") echo "创建桌面快捷方式..." ;;
+            "init_resolution") echo "初始化分辨率配置..." ;;
             "install_complete") 
                 echo -e "\n\033[1;32m✅ 安装完成！请按以下步骤操作："
                 echo -e "1. 重启WSL: 在Windows终端执行: wsl --shutdown"
@@ -44,6 +45,9 @@ msg() {
                 echo -e "\n\033[1;33m⚠️ 请勿直接关闭窗口! 请使用正确方式关机:\033[0m"
                 echo -e "\033[1;36m1. 桌面菜单: 系统菜单 → 关机"
                 echo -e "2. 终端命令: sudo poweroff\033[0m\n"
+                ;;
+            "resolution_fallback")
+                echo -e "\033[1;33m无法获取当前分辨率，使用默认值1920x1080\033[0m"
                 ;;
         esac
     else
@@ -64,6 +68,7 @@ msg() {
             "install_xrandr") echo "Installing xrandr tool..." ;;
             "create_launcher") echo "Creating launcher script..." ;;
             "create_desktop_file") echo "Creating desktop shortcut..." ;;
+            "init_resolution") echo "Initializing resolution configuration..." ;;
             "install_complete")
                 echo -e "\n\033[1;32m✅ Installation complete! Please follow these steps:"
                 echo -e "1. Reboot WSL: In Windows terminal run: wsl --shutdown"
@@ -75,6 +80,9 @@ msg() {
                 echo -e "\n\033[1;33m⚠️ Do not close the window directly! Proper shutdown methods:\033[0m"
                 echo -e "\033[1;36m1. Desktop menu: System → Shutdown"
                 echo -e "2. Terminal command: sudo poweroff\033[0m\n"
+                ;;
+            "resolution_fallback")
+                echo -e "\033[1;33mUnable to detect resolution, using default 1920x1080\033[0m"
                 ;;
         esac
     fi
@@ -150,21 +158,69 @@ select_desktop() {
     done
 }
 
-# 获取当前分辨率
-get_resolution() {
-    # 尝试获取当前分辨率
+# 初始化分辨率配置
+init_resolution() {
+    msg init_resolution
+    
+    # 默认分辨率
+    RES_WIDTH=1920
+    RES_HEIGHT=1080
+    
+    # 尝试使用xrandr获取当前分辨率
     if command -v xrandr &> /dev/null; then
-        RESOLUTION=$(xrandr 2>/dev/null | grep -m1 '*' | awk '{print $1}')
+        # 启动一个临时的Xwayland会话来获取分辨率
+        Xvfb :99 -screen 0 1024x768x24 &
+        XPID=$!
+        sleep 1
+        
+        DISPLAY=:99 xrandr > /tmp/xrandr.output 2>&1
+        RESOLUTION=$(grep -m1 '*' /tmp/xrandr.output | awk '{print $1}')
+        kill $XPID
+        wait $XPID 2>/dev/null
+        
+        if [[ "$RESOLUTION" =~ ([0-9]+)x([0-9]+) ]]; then
+            RES_WIDTH=${BASH_REMATCH[1]}
+            RES_HEIGHT=${BASH_REMATCH[2]}
+            echo "检测到分辨率: ${RES_WIDTH}x${RES_HEIGHT}"
+        else
+            msg resolution_fallback
+        fi
+    else
+        msg resolution_fallback
     fi
     
-    # 如果没有获取到或无效，使用默认值
-    if [[ -z "$RESOLUTION" || ! "$RESOLUTION" =~ [0-9]+x[0-9]+ ]]; then
-        RESOLUTION="1920x1080"
-    fi
+    # 创建分辨率配置文件
+    mkdir -p ~/.config
+    cat > ~/.config/monitors.xml <<EOF
+<monitors version="2">
+  <configuration>
+    <logicalmonitor>
+      <x>0</x>
+      <y>0</y>
+      <scale>1</scale>
+      <primary>yes</primary>
+      <monitor>
+        <monitorspec>
+          <connector>XWAYLAND0</connector>
+          <vendor>unknown</vendor>
+          <product>unknown</product>
+          <serial>unknown</serial>
+        </monitorspec>
+        <mode>
+          <width>${RES_WIDTH}</width>
+          <height>${RES_HEIGHT}</height>
+          <rate>59.963</rate>
+        </mode>
+      </monitor>
+    </logicalmonitor>
+  </configuration>
+</monitors>
+EOF
     
-    # 提取宽高
-    RES_WIDTH=$(echo $RESOLUTION | cut -d'x' -f1)
-    RES_HEIGHT=$(echo $RESOLUTION | cut -d'x' -f2)
+    # 为GDM用户复制配置文件
+    sudo mkdir -p /var/lib/gdm3/.config
+    sudo cp ~/.config/monitors.xml /var/lib/gdm3/.config/ || true
+    sudo chown -R gdm:gdm /var/lib/gdm3/.config/ || true
 }
 
 # 主安装程序
@@ -184,6 +240,13 @@ EOF
     msg update_system
     sudo apt-get update
     sudo apt-get upgrade -y
+
+    # 安装xrandr（分辨率检测需要）
+    msg install_xrandr
+    sudo apt-get install -y x11-xserver-utils
+
+    # 初始化分辨率配置（需要先安装xrandr）
+    init_resolution
 
     # 安装语言支持
     msg install_lang_pack
@@ -246,10 +309,6 @@ EOF
         DESKTOP_NAME="Xubuntu Desktop"
         DESKTOP_EXEC="startxfce4"
     fi
-
-    # 安装xrandr
-    msg install_xrandr
-    sudo apt-get install -y x11-xserver-utils
 
     # 创建wslg-fix服务
     msg create_wslg_fix
@@ -315,7 +374,7 @@ do
   [ ! -e /tmp/.X11-unix/X$displayNumber ] && break
 done
 
-command=("/usr/bin/Xwayland" ":${displayNumber}" "-geometry" "1920x1080" "$@")
+command=("/usr/bin/Xwayland" ":${displayNumber}" "-geometry" "${RES_WIDTH}x${RES_HEIGHT}" "-fullscreen" "$@")
 
 systemd-cat -t /usr/bin/Xorg echo "Starting Xwayland:" "${command[@]}"
 
@@ -343,68 +402,20 @@ EOF
     sudo tee /usr/local/bin/wslg-desktop >/dev/null <<'EOF'
 #!/bin/bash
 
+# 解决DBUS连接问题
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+    if [ -e "$XDG_RUNTIME_DIR/bus" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+    else
+        # 手动启动用户会话总线
+        dbus-run-session -- sh -c 'echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" > ~/.dbus.env'
+        source ~/.dbus.env
+    fi
+fi
+
 # 重置用户systemd会话
 systemctl --user daemon-reload >/dev/null 2>&1
 systemctl --user reset-failed >/dev/null 2>&1
-
-# 获取分辨率
-get_resolution() {
-    if command -v xrandr &> /dev/null; then
-        RESOLUTION=$(xrandr 2>/dev/null | grep -m1 '*' | awk '{print $1}')
-    fi
-    
-    if [[ -z "$RESOLUTION" || ! "$RESOLUTION" =~ [0-9]+x[0-9]+ ]]; then
-        RESOLUTION="1920x1080"
-    fi
-    echo $RESOLUTION
-}
-
-# 创建分辨率配置文件
-create_monitors_config() {
-    RESOLUTION=$(get_resolution)
-    WIDTH=$(echo $RESOLUTION | cut -d'x' -f1)
-    HEIGHT=$(echo $RESOLUTION | cut -d'x' -f2)
-
-    mkdir -p ~/.config
-    cat > ~/.config/monitors.xml <<MONEOF
-<monitors version="2">
-  <configuration>
-    <logicalmonitor>
-      <x>0</x>
-      <y>0</y>
-      <scale>1</scale>
-      <primary>yes</primary>
-      <monitor>
-        <monitorspec>
-          <connector>XWAYLAND0</connector>
-          <vendor>unknown</vendor>
-          <product>unknown</product>
-          <serial>unknown</serial>
-        </monitorspec>
-        <mode>
-          <width>$WIDTH</width>
-          <height>$HEIGHT</height>
-          <rate>59.963</rate>
-        </mode>
-      </monitor>
-    </logicalmonitor>
-  </configuration>
-</monitors>
-MONEOF
-
-    # 为GDM用户复制配置文件
-    sudo mkdir -p /var/lib/gdm3/.config
-    sudo cp ~/.config/monitors.xml /var/lib/gdm3/.config/ 2>/dev/null || true
-    sudo chown -R gdm:gdm /var/lib/gdm3/.config/ 2>/dev/null || true
-}
-
-if [ -f ~/.wslg-desktop-launched ]; then
-    echo "Reloading desktop session..."
-else
-    # 首次启动时创建分辨率配置
-    create_monitors_config
-    touch ~/.wslg-desktop-launched
-fi
 
 # 显示关机提示
 if [ -n "$(echo $LANG | grep -E 'zh_CN|zh_TW')" ]; then
@@ -425,16 +436,18 @@ sudo systemctl start graphical.target
 echo "Waiting for desktop to start (first launch may take 30-60 seconds)..."
 sleep 15
 
-# 启动用户会话
-if systemctl --user start "$DESKTOP_EXEC" 2>/dev/null; then
-    echo "Desktop session started successfully"
+# 启动用户桌面会话
+if [ "$DESKTOP_ENV" = "gnome" ]; then
+    # 启动GNOME
+    export XDG_CURRENT_DESKTOP=ubuntu:GNOME
+    dbus-launch gnome-session
 else
-    echo "Problem starting desktop session, attempting fallback..."
-    $DESKTOP_EXEC &
+    # 启动Xfce
+    dbus-launch startxfce4
 fi
 
 # 保持脚本运行
-sleep infinity
+wait
 EOF
     sudo chmod +x /usr/local/bin/wslg-desktop
 
@@ -451,6 +464,11 @@ Terminal=false
 Type=Application
 Categories=System;
 EOF
+    # 在Windows开始菜单创建快捷方式
+    if command -v wslview >/dev/null; then
+        mkdir -p "$(wslpath "$(wslvar USERPROFILE)")/AppData/Roaming/Microsoft/Windows/Start Menu/Programs"
+        cp ~/.local/share/applications/wslg.desktop "$(wslpath "$(wslvar USERPROFILE)")/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/WSLg Desktop.lnk"
+    fi
 
     # 完成提示
     msg install_complete
