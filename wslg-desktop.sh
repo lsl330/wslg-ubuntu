@@ -104,11 +104,14 @@ case $desktop_choice in
     3)
         echo "Installing Deepin desktop environment..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            deepin-desktop-environment-base \
+            deepin-desktop-environment-cli \
             deepin-desktop-environment-core \
             deepin-default-settings \
             deepin-terminal \
             deepin-image-viewer \
-            deepin-screenshot
+            deepin-screen-recorder-plugin \
+            deepin-screen-recorder
         DESKTOP_NAME="Deepin"
         DESKTOP_LAUNCH="startdde"
         ;;
