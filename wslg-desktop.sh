@@ -114,7 +114,7 @@ case $desktop_choice in
         echo "Installing Deepin desktop environment..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
         deepin-desktop-environment-base \
-            deepin-desktop-environment-cli \Add commentMore actions
+            deepin-desktop-environment-cli \
             deepin-desktop-environment-core \
             deepin-default-settings \
             deepin-terminal \
