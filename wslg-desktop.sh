@@ -120,9 +120,7 @@ case $desktop_choice in
             deepin-terminal \
             deepin-image-viewer \
             deepin-screen-recorder-plugin \
-            deepin-screen-recorder \
-            deepin-graphics-driver-manager \
-            deepin-polkit-agent
+            deepin-screen-recorder
         
         # 额外修复Deepin桌面所需的依赖
         sudo apt-get install -y \
