@@ -52,7 +52,7 @@ for lang in "${langs[@]}"; do
         3)
             echo "Installing Traditional Chinese support..."
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                language-pack-zh-hant \
+                #language-pack-zh-hant \
                 fonts-arphic-ukai \
                 fonts-arphic-uming
             ;;
@@ -100,6 +100,9 @@ case $desktop_choice in
     3)
         echo "Installing Deepin desktop environment..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            deepin-desktop-environment-base \
+            deepin-desktop-environment-cli \
+            deepin-desktop-environment-extras \
             deepin-desktop-environment-core \
             deepin-default-settings \
             deepin-terminal \
