@@ -1,179 +1,259 @@
 #!/bin/bash
 
-# WSL2 Multi-Desktop Installer with Multi-Language Support
-# GitHub: https://github.com/lsl330/wslg-desktop
+# WSL Multi-Desktop Installer with WSLg Support
+# GitHub: https://github.com/lsl330/wslg-ubuntu
 
 set -e
 
-# 获取当前用户名
-CURRENT_USER=$(whoami)
-
-# 选择桌面环境
-echo "Select desktop environment:"
-echo "1. GNOME (Ubuntu Desktop)"
-echo "2. Xfce (Xubuntu Desktop)"
-echo "3. Deepin (Deepin Desktop)"
-read -p "Enter your choice [1-3]: " desktop_choice
-
-# 如果不是Deepin桌面，则选择语言
-if [ "$desktop_choice" != "3" ]; then
-    echo "Select languages to install (comma separated):"
-    echo "1. English"
-    echo "2. Simplified Chinese"
-    echo "3. Traditional Chinese"
-    echo "4. Japanese"
-    read -p "Enter your choices (e.g. 1,2,4): " lang_choices
+# 检测用户语言
+USER_LANG=$(echo $LANG | cut -d'.' -f1)
+if [[ $USER_LANG == "zh_CN" || $USER_LANG == "zh_TW" ]]; then
+    USE_CHINESE=true
+else
+    USE_CHINESE=false
 fi
 
-# 启用systemd
-echo "Enabling systemd support..."
-sudo tee /etc/wsl.conf >/dev/null <<EOF
+# 多语言显示函数
+msg() {
+    if [ "${USE_CHINESE}" = true ]; then
+        case "$1" in
+            "enable_systemd") echo "启用systemd支持..." ;;
+            "update_system") echo "更新系统包列表..." ;;
+            "install_lang_pack") echo "安装语言支持..." ;;
+            "config_lang") echo "配置语言环境..." ;;
+            "create_plocate_conf") echo "创建plocate配置文件..." ;;
+            "disable_plocate_script") echo "禁用plocate安装后脚本..." ;;
+            "install_desktop") echo "安装桌面环境 (请耐心等待)..." ;;
+            "create_wslg_fix") echo "创建wslg-fix服务..." ;;
+            "fix_wayland") echo "修复Wayland引用问题..." ;;
+            "replace_xorg") echo "替换Xorg为Xwayland脚本..." ;;
+            "set_display_target") echo "配置显示目标..." ;;
+            "init_plocate") echo "安全初始化plocate数据库..." ;;
+            "fix_permissions") echo "修复WSLg目录权限..." ;;
+            "install_xrandr") echo "安装xrandr工具..." ;;
+            "create_launcher") echo "创建启动脚本..." ;;
+            "create_desktop_file") echo "创建桌面快捷方式..." ;;
+            "install_complete") 
+                echo -e "\n\033[1;32m✅ 安装完成！请按以下步骤操作："
+                echo -e "1. 重启WSL: 在Windows终端执行: wsl --shutdown"
+                echo -e "2. 重新启动WSL后，输入命令: wslg-desktop"
+                echo -e "3. 首次启动需要30-60秒初始化，请耐心等待"
+                echo -e "4. 桌面关闭后重新进入请再次运行: wslg-desktop\033[0m"
+                ;;
+            "shutdown_prompt")
+                echo -e "\n\033[1;33m⚠️ 请勿直接关闭窗口! 请使用正确方式关机:\033[0m"
+                echo -e "\033[1;36m1. 桌面菜单: 系统菜单 → 关机"
+                echo -e "2. 终端命令: sudo poweroff\033[0m\n"
+                ;;
+        esac
+    else
+        case "$1" in
+            "enable_systemd") echo "Enabling systemd support..." ;;
+            "update_system") echo "Updating package lists..." ;;
+            "install_lang_pack") echo "Installing language support..." ;;
+            "config_lang") echo "Configuring language environment..." ;;
+            "create_plocate_conf") echo "Creating plocate configuration..." ;;
+            "disable_plocate_script") echo "Disabling plocate post-install script..." ;;
+            "install_desktop") echo "Installing desktop environment (please wait)..." ;;
+            "create_wslg_fix") echo "Creating wslg-fix service..." ;;
+            "fix_wayland") echo "Fixing Wayland references..." ;;
+            "replace_xorg") echo "Replacing Xorg with Xwayland script..." ;;
+            "set_display_target") echo "Setting display target..." ;;
+            "init_plocate") echo "Initializing plocate database safely..." ;;
+            "fix_permissions") echo "Fixing WSLg permissions..." ;;
+            "install_xrandr") echo "Installing xrandr tool..." ;;
+            "create_launcher") echo "Creating launcher script..." ;;
+            "create_desktop_file") echo "Creating desktop shortcut..." ;;
+            "install_complete")
+                echo -e "\n\033[1;32m✅ Installation complete! Please follow these steps:"
+                echo -e "1. Reboot WSL: In Windows terminal run: wsl --shutdown"
+                echo -e "2. After WSL restarts, run: wslg-desktop"
+                echo -e "3. First launch may take 30-60 seconds"
+                echo -e "4. To relaunch desktop after closing, run: wslg-desktop again\033[0m"
+                ;;
+            "shutdown_prompt")
+                echo -e "\n\033[1;33m⚠️ Do not close the window directly! Proper shutdown methods:\033[0m"
+                echo -e "\033[1;36m1. Desktop menu: System → Shutdown"
+                echo -e "2. Terminal command: sudo poweroff\033[0m\n"
+                ;;
+        esac
+    fi
+}
+
+# 选择语言
+select_language() {
+    PS3="$(if [ "${USE_CHINESE}" = true ]; then 
+        echo "请选择系统语言: "; 
+    else 
+        echo "Select system language: "; 
+    fi)"
+    
+    options=("English" "简体中文" "繁體中文" "日本語")
+    select lng in "${options[@]}"
+    do
+        case $lng in
+            "English")
+                LANG_CODE="en_US.UTF-8"
+                break
+                ;;
+            "简体中文")
+                LANG_CODE="zh_CN.UTF-8"
+                break
+                ;;
+            "繁體中文")
+                LANG_CODE="zh_TW.UTF-8"
+                break
+                ;;
+            "日本語")
+                LANG_CODE="ja_JP.UTF-8"
+                break
+                ;;
+            *) 
+                if [ "${USE_CHINESE}" = true ]; then 
+                    echo "无效选项，请重新选择"; 
+                else 
+                    echo "Invalid option, try again"; 
+                fi
+                ;;
+        esac
+    done
+}
+
+# 选择桌面环境
+select_desktop() {
+    PS3="$(if [ "${USE_CHINESE}" = true ]; then 
+        echo "请选择桌面环境: "; 
+    else 
+        echo "Select desktop environment: "; 
+    fi)"
+    
+    options=("GNOME (完整桌面)" "Xfce (轻量级桌面)")
+    select desktop in "${options[@]}"
+    do
+        case $desktop in
+            "GNOME (完整桌面)")
+                DESKTOP_ENV="gnome"
+                break
+                ;;
+            "Xfce (轻量级桌面)")
+                DESKTOP_ENV="xfce"
+                break
+                ;;
+            *) 
+                if [ "${USE_CHINESE}" = true ]; then 
+                    echo "无效选项，请重新选择"; 
+                else 
+                    echo "Invalid option, try again"; 
+                fi
+                ;;
+        esac
+    done
+}
+
+# 获取当前分辨率
+get_resolution() {
+    # 尝试获取当前分辨率
+    if command -v xrandr &> /dev/null; then
+        RESOLUTION=$(xrandr 2>/dev/null | grep -m1 '*' | awk '{print $1}')
+    fi
+    
+    # 如果没有获取到或无效，使用默认值
+    if [[ -z "$RESOLUTION" || ! "$RESOLUTION" =~ [0-9]+x[0-9]+ ]]; then
+        RESOLUTION="1920x1080"
+    fi
+    
+    # 提取宽高
+    RES_WIDTH=$(echo $RESOLUTION | cut -d'x' -f1)
+    RES_HEIGHT=$(echo $RESOLUTION | cut -d'x' -f2)
+}
+
+# 主安装程序
+main() {
+    # 用户选择
+    select_language
+    select_desktop
+    
+    # 启用systemd
+    msg enable_systemd
+    sudo tee /etc/wsl.conf >/dev/null <<EOF
 [boot]
 systemd=true
 EOF
 
-# 更新系统
-echo "Updating package lists..."
-sudo apt-get update
+    # 更新系统
+    msg update_system
+    sudo apt-get update
+    sudo apt-get upgrade -y
 
-# 安装必要依赖（包括xrandr）
-echo "Installing essential dependencies..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    x11-xserver-utils \
-    mesa-utils \
-    xdg-utils \
-    dbus-user-session \
-    policykit-1
+    # 安装语言支持
+    msg install_lang_pack
+    case $LANG_CODE in
+        "zh_CN.UTF-8")
+            sudo apt-get install -y language-pack-zh-hans language-pack-gnome-zh-hans
+            ;;
+        "zh_TW.UTF-8")
+            sudo apt-get install -y language-pack-zh-hant language-pack-gnome-zh-hant
+            ;;
+        "ja_JP.UTF-8")
+            sudo apt-get install -y language-pack-ja language-pack-gnome-ja
+            ;;
+        *)
+            sudo apt-get install -y language-pack-en language-pack-gnome-en
+            ;;
+    esac
 
-# 如果不是Deepin桌面，则安装所选语言
-if [ "$desktop_choice" != "3" ]; then
-    IFS=',' read -ra langs <<< "$lang_choices"
-    for lang in "${langs[@]}"; do
-        case $lang in
-            1)
-                echo "Installing English support..."
-                sudo apt-get install -y language-pack-en
-                ;;
-            2)
-                echo "Installing Simplified Chinese support..."
-                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                    language-pack-zh-hans \
-                    fonts-noto-cjk \
-                    fonts-noto-ui-core
-                ;;
-            3)
-                echo "Installing Traditional Chinese support..."
-                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                    language-pack-zh-hant \
-                    fonts-arphic-ukai \
-                    fonts-arphic-uming
-                ;;
-            4)
-                echo "Installing Japanese support..."
-                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                    language-pack-ja \
-                    fonts-noto-cjk \
-                    fonts-ipafont \
-                    fonts-ipaexfont
-                ;;
-        esac
-    done
-    
-    # 配置语言环境变量（仅非Deepin桌面）
-    echo "Configuring language environment variables..."
-    sudo tee -a /etc/environment >/dev/null <<EOF
-LANG=en_US.UTF-8
-LANGUAGE=en_US:en
+    # 通用字体安装
+    sudo apt-get install -y fonts-noto-cjk fonts-noto-ui-core
+
+    # 配置语言环境
+    msg config_lang
+    sudo tee /etc/default/locale >/dev/null <<EOF
+LANG="$LANG_CODE"
+LANGUAGE="${LANG_CODE%.*}:en_US:en"
 EOF
+    sudo update-locale LANG="$LANG_CODE" LC_ALL="$LANG_CODE"
 
-    sudo locale-gen en_US.UTF-8
-    sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
-fi
-
-# 安装桌面环境
-case $desktop_choice in
-    1)
-        echo "Installing GNOME desktop environment..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            ubuntu-desktop \
-            gnome-shell \
-            gnome-control-center
-        DESKTOP_NAME="GNOME"
-        DESKTOP_LAUNCH="gnome-session"
-        ;;
-    2)
-        echo "Installing Xfce desktop environment..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            xubuntu-desktop \
-            xfce4 \
-            xfce4-goodies
-        DESKTOP_NAME="Xfce"
-        DESKTOP_LAUNCH="startxfce4"
-        ;;
-    3)
-        echo "Installing Deepin desktop environment..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        deepin-desktop-environment-base \
-            deepin-desktop-environment-cli \
-            deepin-desktop-environment-core \
-            deepin-default-settings \
-            deepin-terminal \
-            deepin-image-viewer \
-            deepin-screen-recorder-plugin \
-            deepin-screen-recorder \
-            deepin-editor
-        
-        # 额外修复Deepin桌面所需的依赖
-        sudo apt-get install -y \
-            x11-xkb-utils \
-            xserver-xorg-input-all \
-            libqt5gui5 \
-            libqt5dbus5 \
-            libqt5x11extras5 \
-            libxcb-util0 \
-            libxcb-util1
-        
-        DESKTOP_NAME="Deepin"
-        DESKTOP_LAUNCH="startdde"
-        ;;
-esac
-
-# 公共安装组件
-echo "Installing common components..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    xwayland \
-    dbus-x11 \
-    policykit-1-gnome \
-    locales \
-    fcitx fcitx-mozc fcitx-config-gtk \
-    im-config \
-    x11-xserver-utils \
-    mesa-utils \
-    xdg-utils
-
-# 1. 预先创建plocate配置文件
-echo "Creating plocate configuration..."
-sudo tee /etc/updatedb.conf >/dev/null <<'EOF'
+    # 创建plocate配置
+    msg create_plocate_conf
+    sudo tee /etc/updatedb.conf >/dev/null <<'EOF'
 PRUNE_BIND_MOUNTS="yes"
 PRUNENAMES=".git .bzr .hg .svn"
 PRUNEPATHS="/tmp /var/spool /var/lock /var/cache /var/lib/lxcfs /var/lib/docker /mnt"
 PRUNEFS="NFS nfs nfs4 rpc_pipefs afs binfmt_misc proc smbfs autofs iso9660 ncpfs coda devpts ftpfs devfs mfs shfs sysfs cifs lustre_lite tmpfs usbfs udf fuse.glusterfs fuse.sshfs curlftpfs ecryptfs fusesmb devtmpfs"
 EOF
 
-# 2. 禁用plocate安装后脚本
-echo "Disabling plocate post-install script..."
-sudo mkdir -p /var/lib/dpkg/info/
-sudo tee /var/lib/dpkg/info/plocate.postinst >/dev/null <<'EOF'
+    # 禁用plocate安装后脚本
+    msg disable_plocate_script
+    sudo mkdir -p /var/lib/dpkg/info/
+    sudo tee /var/lib/dpkg/info/plocate.postinst >/dev/null <<'EOF'
 #!/bin/sh
 set -e
-echo "Skipping plocate database initialization (pre-configured in WSL)"
+echo "Skipping plocate database initialization (pre-configured for WSL)"
 exit 0
 EOF
-sudo chmod 0755 /var/lib/dpkg/info/plocate.postinst
+    sudo chmod 0755 /var/lib/dpkg/info/plocate.postinst
 
-# 3. 创建wslg-fix服务
-echo "Creating wslg-fix service..."
-sudo tee /etc/systemd/system/wslg-fix.service >/dev/null <<'EOF'
+    # 安装桌面环境
+    msg install_desktop
+    sudo apt-get install -y xwayland dbus-x11 policykit-1-gnome
+    
+    if [ "$DESKTOP_ENV" = "gnome" ]; then
+        sudo apt-get install -y ubuntu-desktop
+        DESKTOP_NAME="Ubuntu Desktop"
+        DESKTOP_EXEC="gnome-session"
+    else
+        sudo apt-get install -y xubuntu-desktop
+        DESKTOP_NAME="Xubuntu Desktop"
+        DESKTOP_EXEC="startxfce4"
+    fi
+
+    # 安装xrandr
+    msg install_xrandr
+    sudo apt-get install -y x11-xserver-utils
+
+    # 创建wslg-fix服务
+    msg create_wslg_fix
+    sudo tee /etc/systemd/system/wslg-fix.service >/dev/null <<'EOF'
 [Unit]
 Description=Fix WSLg permissions
 After=systemd-user-sessions.service
@@ -191,21 +271,20 @@ ExecStart=/usr/bin/chmod 0666 /mnt/wslg/runtime-dir/wayland-0.lock
 [Install]
 WantedBy=multi-user.target
 EOF
+    sudo systemctl enable wslg-fix.service
 
-sudo systemctl enable wslg-fix.service
-
-# 4. 修复Wayland引用问题
-echo "Fixing Wayland references..."
-sudo mkdir -p /etc/systemd/system/user-runtime-dir@.service.d/
-sudo tee /etc/systemd/system/user-runtime-dir@.service.d/override.conf >/dev/null <<'EOF'
+    # 修复Wayland引用
+    msg fix_wayland
+    sudo mkdir -p /etc/systemd/system/user-runtime-dir@.service.d/
+    sudo tee /etc/systemd/system/user-runtime-dir@.service.d/override.conf >/dev/null <<'EOF'
 [Service]
 ExecStartPost=-/usr/bin/rm -f /run/user/%i/wayland-0 /run/user/%i/wayland-0.lock
 EOF
 
-# 5. 替换Xorg为Xwayland脚本
-echo "Replacing Xorg with Xwayland script..."
-sudo mv /usr/bin/Xorg /usr/bin/Xorg.original || true
-sudo tee /usr/bin/Xorg.Xwayland >/dev/null <<'EOF'
+    # 替换Xorg为Xwayland
+    msg replace_xorg
+    sudo mv /usr/bin/Xorg /usr/bin/Xorg.original 2>/dev/null || true
+    sudo tee /usr/bin/Xorg.Xwayland >/dev/null <<'EOF'
 #!/bin/bash
 for arg do
   shift
@@ -226,7 +305,6 @@ done
 if [ ! -d $HOME/runtime-dir ]
 then
  mkdir $HOME/runtime-dir
- ln -s /mnt/wslg/.X11-unix/X0 /tmp/.X11-unix/X0
  ln -s /mnt/wslg/runtime-dir/wayland-0 /mnt/wslg/runtime-dir/wayland-0.lock $HOME/runtime-dir/
 fi
 
@@ -237,52 +315,58 @@ do
   [ ! -e /tmp/.X11-unix/X$displayNumber ] && break
 done
 
-# 获取当前分辨率
-RESOLUTION=${RESOLUTION:-"1920x1080"}
-command=("/usr/bin/Xwayland" ":${displayNumber}" "-geometry" "$RESOLUTION" "-fullscreen" "$@")
+command=("/usr/bin/Xwayland" ":${displayNumber}" "-geometry" "1920x1080" "$@")
 
 systemd-cat -t /usr/bin/Xorg echo "Starting Xwayland:" "${command[@]}"
 
 exec "${command[@]}"
 EOF
+    sudo chmod 0755 /usr/bin/Xorg.Xwayland
+    sudo ln -sf /usr/bin/Xorg.Xwayland /usr/bin/Xorg
 
-sudo chmod 0755 /usr/bin/Xorg.Xwayland
-sudo ln -sf /usr/bin/Xorg.Xwayland /usr/bin/Xorg
+    # 配置显示目标
+    msg set_display_target
+    sudo systemctl set-default multi-user.target
 
-# 6. 配置显示目标
-echo "Configuring display target..."
-sudo systemctl set-default multi-user.target
+    # 初始化plocate
+    msg init_plocate
+    sudo mkdir -p /var/lib/plocate
+    sudo updatedb --require-visibility 0 2>/dev/null || true
 
-# 7. 手动安全初始化plocate
-echo "Initializing plocate database safely..."
-sudo mkdir -p /var/lib/plocate
-sudo updatedb --require-visibility 0 2>/dev/null || true
-echo "Plocate database initialized"
+    # 修复权限
+    msg fix_permissions
+    sudo chmod 1777 /tmp
+    [ -d /usr/share/desktop-directories ] && sudo chmod 1777 /usr/share/desktop-directories || true
 
-# 8. 修复WSLg权限问题
-echo "Fixing WSLg directory permissions..."
-sudo chmod 1777 /tmp
-[ -d /usr/share/desktop-directories ] && sudo chmod 1777 /usr/share/desktop-directories || true
+    # 创建启动脚本（解决DBUS连接问题）
+    msg create_launcher
+    sudo tee /usr/local/bin/wslg-desktop >/dev/null <<'EOF'
+#!/bin/bash
 
-# 9. 自动检测分辨率并设置
-echo "Detecting display resolution..."
-if command -v xrandr &> /dev/null; then
-    RESOLUTION=$(xrandr | grep '*' | head -n 1 | awk '{print $1}')
-    if [ -z "$RESOLUTION" ]; then
-        RESOLUTION="1920x1080"
-        echo "Using default resolution: $RESOLUTION"
-    else
-        echo "Detected resolution: $RESOLUTION"
+# 重置用户systemd会话
+systemctl --user daemon-reload >/dev/null 2>&1
+systemctl --user reset-failed >/dev/null 2>&1
+
+# 获取分辨率
+get_resolution() {
+    if command -v xrandr &> /dev/null; then
+        RESOLUTION=$(xrandr 2>/dev/null | grep -m1 '*' | awk '{print $1}')
     fi
-else
-    RESOLUTION="1920x1080"
-    echo "xrandr not installed, using default resolution: $RESOLUTION"
-fi
+    
+    if [[ -z "$RESOLUTION" || ! "$RESOLUTION" =~ [0-9]+x[0-9]+ ]]; then
+        RESOLUTION="1920x1080"
+    fi
+    echo $RESOLUTION
+}
 
 # 创建分辨率配置文件
-echo "Configuring resolution $RESOLUTION..."
-mkdir -p ~/.config
-cat > ~/.config/monitors.xml <<EOF
+create_monitors_config() {
+    RESOLUTION=$(get_resolution)
+    WIDTH=$(echo $RESOLUTION | cut -d'x' -f1)
+    HEIGHT=$(echo $RESOLUTION | cut -d'x' -f2)
+
+    mkdir -p ~/.config
+    cat > ~/.config/monitors.xml <<MONEOF
 <monitors version="2">
   <configuration>
     <logicalmonitor>
@@ -298,162 +382,79 @@ cat > ~/.config/monitors.xml <<EOF
           <serial>unknown</serial>
         </monitorspec>
         <mode>
-          <width>${RESOLUTION%x*}</width>
-          <height>${RESOLUTION#*x}</height>
-          <rate>60</rate>
+          <width>$WIDTH</width>
+          <height>$HEIGHT</height>
+          <rate>59.963</rate>
         </mode>
       </monitor>
     </logicalmonitor>
   </configuration>
 </monitors>
-EOF
+MONEOF
 
-# 为GDM用户复制配置文件
-[ -d /var/lib/gdm3 ] && sudo mkdir -p /var/lib/gdm3/.config && \
-    sudo cp ~/.config/monitors.xml /var/lib/gdm3/.config/ && \
-    sudo chown -R gdm:gdm /var/lib/gdm3/.config/ || true
+    # 为GDM用户复制配置文件
+    sudo mkdir -p /var/lib/gdm3/.config
+    sudo cp ~/.config/monitors.xml /var/lib/gdm3/.config/ 2>/dev/null || true
+    sudo chown -R gdm:gdm /var/lib/gdm3/.config/ 2>/dev/null || true
+}
 
-# 10. 输入法配置（仅非Deepin桌面）
-if [ "$desktop_choice" != "3" ]; then
-    echo "Configuring input methods..."
-    tee -a ~/.profile >/dev/null <<'EOF'
-export GTK_IM_MODULE=fcitx
-export QT_IM_MODULE=fcitx
-export XMODIFIERS=@im=fcitx
-EOF
+if [ -f ~/.wslg-desktop-launched ]; then
+    echo "Reloading desktop session..."
+else
+    # 首次启动时创建分辨率配置
+    create_monitors_config
+    touch ~/.wslg-desktop-launched
 fi
-
-# 11. 创建统一启动命令（解决Deepin启动问题）
-echo "Creating unified desktop launch command with Deepin fixes..."
-sudo tee /usr/local/bin/wslg-desktop >/dev/null <<EOF
-#!/bin/bash
-
-# 解决dbus连接问题
-echo "Starting systemd user session..."
-systemctl restart user@\$(id -u).service
-sleep 2
 
 # 显示关机提示
-echo -e "\n\033[1;33m⚠️ Do NOT close this window directly! Use one of these methods:\033[0m"
-echo -e "\033[1;36m1. Desktop menu: System menu → Shutdown"
-echo -e "2. Terminal command: sudo poweroff\033[0m\n"
-
-# 设置环境变量
-export XDG_RUNTIME_DIR=/run/user/\$(id -u)
-export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/\$(id -u)/bus
-
-# Deepin桌面特殊修复
-if [ "$DESKTOP_NAME" = "Deepin" ]; then
-    # 修复背光控制器错误
-    sudo mkdir -p /sys/class/backlight/dummy
-    echo 100 | sudo tee /sys/class/backlight/dummy/brightness >/dev/null 2>&1
-    
-    # 修复显卡模式检测错误
-    export DDE_DISABLE_GPU_CHECK=1
-    
-    # 修复用户ID 0未登录错误
-    sudo loginctl enable-linger \$(id -u)
-    
-    # 修复显示器名称错误
-    export DDE_DISABLE_DISPLAY_NAME_CHECK=1
-    
-    # 修复触摸屏映射错误
-    export DDE_DISABLE_TOUCHSCREEN_MAPPING=1
-    
-    # 修复内置屏幕检测错误
-    export DDE_DISABLE_BUILTIN_SCREEN_CHECK=1
-    
-    # 修复redshift服务错误
-    export DDE_DISABLE_REDSHIFT=1
-    
-    # 确保正确的权限
-    sudo chown -R \$(id -u):\$(id -g) ~/.config
+if [ -n "$(echo $LANG | grep -E 'zh_CN|zh_TW')" ]; then
+    echo -e "\n\033[1;33m⚠️ 请勿直接关闭窗口! 请使用以下方式关机:\033[0m"
+    echo -e "\033[1;36m1. 桌面菜单: 系统菜单 → 关机"
+    echo -e "2. 终端命令: sudo poweroff\033[0m\n"
+else
+    echo -e "\n\033[1;33m⚠️ Do not close window directly! Proper shutdown methods:\033[0m"
+    echo -e "\033[1;36m1. Desktop menu: System → Shutdown"
+    echo -e "2. Terminal command: sudo poweroff\033[0m\n"
 fi
 
-# 启动桌面环境
-echo "Launching $DESKTOP_NAME desktop..."
-$DESKTOP_LAUNCH
+# 启动图形目标
+echo "Starting graphical session..."
+sudo systemctl start graphical.target
 
-# 桌面退出后清理
-echo "Desktop session ended. Cleaning up..."
-systemctl restart user@\$(id -u).service
+# 等待桌面启动
+echo "Waiting for desktop to start (first launch may take 30-60 seconds)..."
+sleep 15
+
+# 启动用户会话
+if systemctl --user start "$DESKTOP_EXEC" 2>/dev/null; then
+    echo "Desktop session started successfully"
+else
+    echo "Problem starting desktop session, attempting fallback..."
+    $DESKTOP_EXEC &
+fi
+
+# 保持脚本运行
+sleep infinity
 EOF
+    sudo chmod +x /usr/local/bin/wslg-desktop
 
-sudo chmod +x /usr/local/bin/wslg-desktop
-
-# 12. 创建桌面启动器
-echo "Creating desktop launcher..."
-sudo tee /usr/share/applications/wslg-desktop.desktop >/dev/null <<EOF
+    # 创建桌面快捷方式
+    msg create_desktop_file
+    mkdir -p ~/.local/share/applications
+    cat > ~/.local/share/applications/wslg.desktop <<EOF
 [Desktop Entry]
-Name=WSLg Desktop
-Comment=Launch WSLg Desktop Environment
+Name=$DESKTOP_NAME
+Comment=WSLg Desktop Environment
 Exec=/usr/local/bin/wslg-desktop
-Icon=distributor-logo
+Icon=org.gnome.Settings
 Terminal=false
 Type=Application
-Categories=Utility;
+Categories=System;
 EOF
 
-# 13. 创建Windows快捷方式
-echo "Creating Windows shortcut..."
-cat > /mnt/c/Users/Public/Desktop/WSLg-Desktop.lnk <<EOF
-[Shell]
-Command=2
-IconFile=C:\\Windows\\System32\\wsl.exe
-[Taskbar]
-Command=ToggleDesktop
-[InternetShortcut]
-URL=https://github.com/lsl330/wslg-ubuntu
-IDList=
-IconIndex=0
-EOF
+    # 完成提示
+    msg install_complete
+}
 
-# 14. 创建无需sudo的启动脚本
-echo "Creating user-level launcher..."
-tee ~/start-desktop.sh >/dev/null <<EOF
-#!/bin/bash
-
-# 确保以当前用户运行
-if [ "\$(id -u)" -eq 0 ]; then
-    echo "Error: This script must be run as regular user, not root."
-    exit 1
-fi
-
-# 启动桌面
-/usr/local/bin/wslg-desktop
-EOF
-
-chmod +x ~/start-desktop.sh
-
-# 15. 完成提示
-echo -e "\n\033[1;32m✅ Installation complete! Follow these steps:\033[0m"
-echo -e "1. \033[1;34mRestart WSL: wsl --shutdown (in Windows PowerShell/CMD)\033[0m"
-echo -e "2. \033[1;34mRestart your WSL Ubuntu session\033[0m"
-
-if [ "$desktop_choice" == "3" ]; then
-    echo -e "\n\033[1;33mDeepin Desktop Startup Instructions:\033[0m"
-    echo -e "3. \033[1;34mStart desktop: ~/start-desktop.sh\033[0m"
-    echo -e "   - Do NOT use sudo or root user"
-    echo -e "   - First launch may take 1-3 minutes to initialize"
-    echo -e "   - After login, set your language in Deepin Control Center:"
-    echo -e "     System Settings → Personalization → Language"
-    echo -e "\n\033[1;33mKnown Deepin Fixes Applied:\033[0m"
-    echo -e "   - Backlight controller dummy created"
-    echo -e "   - GPU checking disabled"
-    echo -e "   - User linger enabled"
-    echo -e "   - Display name checking disabled"
-    echo -e "   - Touchscreen mapping disabled"
-    echo -e "   - Built-in screen checking disabled"
-    echo -e "   - Redshift service disabled"
-else
-    echo -e "3. \033[1;34mStart desktop: wslg-desktop\033[0m"
-    echo -e "   - First launch may take 30-60 seconds to initialize"
-fi
-
-echo -e "\n\033[1;33mDesktop Launch Options:\033[0m"
-echo -e "   - Command line: ~/start-desktop.sh (Deepin) or wslg-desktop (others)"
-echo -e "   - Windows shortcut: Desktop 'WSLg Desktop' icon"
-echo -e "   - Windows Start Menu: Search for 'WSLg Desktop'"
-echo -e "\n\033[1;33mTroubleshooting:\033[0m"
-echo -e "   If desktop doesn't appear, check logs:"
-echo -e "      journalctl -b --user --no-pager -u user@$(id -u).service"
+# 执行主程序
+main
