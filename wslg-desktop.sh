@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# WSL Multi-Desktop Installer with Multi-Language Support
+# WSL2 Multi-Desktop Installer with Multi-Language Support
 # GitHub: https://github.com/lsl330/wslg-desktop
 
 set -e
