@@ -45,7 +45,6 @@ for lang in "${langs[@]}"; do
         2)
             echo "Installing Simplified Chinese support..."
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                #language-pack-zh-hans \
                 fonts-noto-cjk \
                 fonts-noto-ui-core
             ;;
