@@ -8,20 +8,22 @@ set -e
 # 获取当前用户名
 CURRENT_USER=$(whoami)
 
-# 选择语言
-echo "Select languages to install (comma separated):"
-echo "1. English"
-echo "2. Simplified Chinese"
-echo "3. Traditional Chinese"
-echo "4. Japanese"
-read -p "Enter your choices (e.g. 1,2,4): " lang_choices
-
 # 选择桌面环境
 echo "Select desktop environment:"
 echo "1. GNOME (Ubuntu Desktop)"
 echo "2. Xfce (Xubuntu Desktop)"
 echo "3. Deepin (Deepin Desktop)"
 read -p "Enter your choice [1-3]: " desktop_choice
+
+# 如果不是Deepin桌面，则选择语言
+if [ "$desktop_choice" != "3" ]; then
+    echo "Select languages to install (comma separated):"
+    echo "1. English"
+    echo "2. Simplified Chinese"
+    echo "3. Traditional Chinese"
+    echo "4. Japanese"
+    read -p "Enter your choices (e.g. 1,2,4): " lang_choices
+fi
 
 # 启用systemd
 echo "Enabling systemd support..."
@@ -34,47 +36,50 @@ EOF
 echo "Updating package lists..."
 sudo apt-get update
 
-# 安装所选语言
-IFS=',' read -ra langs <<< "$lang_choices"
-for lang in "${langs[@]}"; do
-    case $lang in
-        1)
-            echo "Installing English support..."
-            sudo apt-get install -y language-pack-en
-            ;;
-        2)
-            echo "Installing Simplified Chinese support..."
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                fonts-noto-cjk \
-                fonts-noto-ui-core
-            ;;
-        3)
-            echo "Installing Traditional Chinese support..."
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                language-pack-zh-hant \
-                fonts-arphic-ukai \
-                fonts-arphic-uming
-            ;;
-        4)
-            echo "Installing Japanese support..."
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                language-pack-ja \
-                fonts-noto-cjk \
-                fonts-ipafont \
-                fonts-ipaexfont
-            ;;
-    esac
-done
-
-# 配置语言环境变量
-echo "Configuring language environment variables..."
-sudo tee -a /etc/environment >/dev/null <<EOF
+# 如果不是Deepin桌面，则安装所选语言
+if [ "$desktop_choice" != "3" ]; then
+    IFS=',' read -ra langs <<< "$lang_choices"
+    for lang in "${langs[@]}"; do
+        case $lang in
+            1)
+                echo "Installing English support..."
+                sudo apt-get install -y language-pack-en
+                ;;
+            2)
+                echo "Installing Simplified Chinese support..."
+                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                    language-pack-zh-hans \
+                    fonts-noto-cjk \
+                    fonts-noto-ui-core
+                ;;
+            3)
+                echo "Installing Traditional Chinese support..."
+                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                    language-pack-zh-hant \
+                    fonts-arphic-ukai \
+                    fonts-arphic-uming
+                ;;
+            4)
+                echo "Installing Japanese support..."
+                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                    language-pack-ja \
+                    fonts-noto-cjk \
+                    fonts-ipafont \
+                    fonts-ipaexfont
+                ;;
+        esac
+    done
+    
+    # 配置语言环境变量（仅非Deepin桌面）
+    echo "Configuring language environment variables..."
+    sudo tee -a /etc/environment >/dev/null <<EOF
 LANG=en_US.UTF-8
 LANGUAGE=en_US:en
 EOF
 
-sudo locale-gen en_US.UTF-8
-sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+    sudo locale-gen en_US.UTF-8
+    sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+fi
 
 # 安装桌面环境
 case $desktop_choice in
@@ -99,9 +104,6 @@ case $desktop_choice in
     3)
         echo "Installing Deepin desktop environment..."
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            deepin-desktop-environment-base \
-            deepin-desktop-environment-cli \
-            deepin-desktop-environment-extras \
             deepin-desktop-environment-core \
             deepin-default-settings \
             deepin-terminal \
@@ -122,7 +124,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     fcitx fcitx-mozc fcitx-config-gtk \
     im-config \
     x11-xserver-utils \
-    mesa-utils
+    mesa-utils \
+    xdg-utils
 
 # 1. 预先创建plocate配置文件
 echo "Creating plocate configuration..."
@@ -199,6 +202,8 @@ done
 if [ ! -d $HOME/runtime-dir ]
 then
  mkdir $HOME/runtime-dir
+ ln -s /mnt.wslg/.X11-unix/X0 /tmp/.X11-unix/X0
+ ln -s /mnt/wslg/.X11-unix/X0 /tmp/.X11-unix/X0
  ln -s /mnt/wslg/runtime-dir/wayland-0 /mnt/wslg/runtime-dir/wayland-0.lock $HOME/runtime-dir/
 fi
 
@@ -285,13 +290,15 @@ EOF
     sudo cp ~/.config/monitors.xml /var/lib/gdm3/.config/ && \
     sudo chown -R gdm:gdm /var/lib/gdm3/.config/ || true
 
-# 10. 输入法配置
-echo "Configuring input methods..."
-tee -a ~/.profile >/dev/null <<'EOF'
+# 10. 输入法配置（仅非Deepin桌面）
+if [ "$desktop_choice" != "3" ]; then
+    echo "Configuring input methods..."
+    tee -a ~/.profile >/dev/null <<'EOF'
 export GTK_IM_MODULE=fcitx
 export QT_IM_MODULE=fcitx
 export XMODIFIERS=@im=fcitx
 EOF
+fi
 
 # 11. 创建统一启动命令（解决重启问题）
 echo "Creating unified desktop launch command with session fix..."
@@ -323,21 +330,7 @@ EOF
 
 sudo chmod +x /usr/local/bin/wslg-desktop
 
-# 12. 创建Windows启动器
-echo "Creating Windows launcher..."
-cat > /mnt/c/Users/Public/Desktop/WSLg-Desktop.lnk <<EOF
-[Shell]
-Command=2
-IconFile=C:\\Windows\\System32\\wsl.exe
-[Taskbar]
-Command=ToggleDesktop
-[InternetShortcut]
-URL=https://github.com/lsl330/wslg-ubuntu
-IDList=
-IconIndex=0
-EOF
-
-# 13. 创建桌面启动器
+# 12. 创建桌面启动器
 echo "Creating desktop launcher..."
 sudo tee /usr/share/applications/wslg-desktop.desktop >/dev/null <<EOF
 [Desktop Entry]
@@ -350,14 +343,36 @@ Type=Application
 Categories=Utility;
 EOF
 
+# 13. 创建Windows快捷方式
+echo "Creating Windows shortcut..."
+cat > /mnt/c/Users/Public/Desktop/WSLg-Desktop.lnk <<EOF
+[Shell]
+Command=2
+IconFile=C:\\Windows\\System32\\wsl.exe
+[Taskbar]
+Command=ToggleDesktop
+[InternetShortcut]
+URL=https://github.com/lsl330/wslg-ubuntu
+IDList=
+IconIndex=0
+EOF
+
 # 14. 完成提示
 echo -e "\n\033[1;32m✅ Installation complete! Follow these steps:\033[0m"
 echo -e "1. \033[1;34mRestart WSL: wsl --shutdown (in Windows PowerShell/CMD)\033[0m"
-echo -e "2. \033[1;34mRestart WSL Ubuntu session\033[0m"
+echo -e "2. \033[1;34mRestart your WSL Ubuntu session\033[0m"
 echo -e "3. \033[1;34mLaunch desktop: wslg-desktop\033[0m"
 echo -e "4. First launch may take 30-60 seconds to initialize"
-echo -e "\n\033[1;33mTip: To launch from Windows Start Menu:"
-echo -e "   - Look for 'WSLg Desktop' shortcut on your Windows desktop"
-echo -e "   - Or type 'WSLg Desktop' in Windows search\033[0m"
-echo -e "\n\033[1;33mNote: If desktop doesn't appear, check logs with:"
-echo -e "   journalctl -b -t /usr/lib/gdm3/gdm-x-session -t /usr/bin/Xorg --no-pager\033[0m"
+
+if [ "$desktop_choice" == "3" ]; then
+    echo -e "\n\033[1;33mDeepin Desktop Note:"
+    echo -e "   - After login, you can set your preferred language in Deepin Control Center"
+    echo -e "   - Go to System Settings → Personalization → Language\033[0m"
+fi
+
+echo -e "\n\033[1;33mDesktop Launch Options:"
+echo -e "   - Command line: wslg-desktop"
+echo -e "   - Windows shortcut: Desktop 'WSLg Desktop' icon"
+echo -e "   - Windows Start Menu: Search for 'WSLg Desktop'\033[0m"
+echo -e "\n\033[1;33mTroubleshooting:"
+echo -e "   If desktop doesn't appear, check logs: journalctl -b -t /usr/lib/gdm3/gdm-x-session -t /usr/bin/Xorg --no-pager\033[0m"
